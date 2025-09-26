@@ -1,6 +1,6 @@
 /**
  * @file rank_reliability.cpp
- * @brief DISCL student project: build a consensus ranking and grade each source by how much it disagrees.
+ * @brief Build a consensus ranking and grade each source by how much it disagrees.
  * @author
  *   Batuhan Sencer & Larry To
  * @date 2025-09-26
