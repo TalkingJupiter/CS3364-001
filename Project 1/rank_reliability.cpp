@@ -1,7 +1,8 @@
 /**
  * @file rank_reliability.cpp
  * @brief DISCL student project: build a consensus ranking and grade each source by how much it disagrees.
- * @author Batuhan Sencer & Larry To
+ * @author
+ *   Batuhan Sencer & Larry To
  * @date 2025-09-26
  *
  * What this does (plain English):
@@ -18,24 +19,23 @@
  * Super short recap: fuse by sum-of-ranks → count inversions per source → reliability = 1 − inv/max_inv.
  */
 
-#include <iostream>
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <functional>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <set>
 #include <sstream>
-#include <vector>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <map>
-#include <set>
-#include <algorithm>
-#include <functional>
-#include <iomanip>
-#include <filesystem>
-#include <cmath>
 #include <utility>
+#include <vector>
 
 using namespace std;
-
 using ll = long long;
 
 /**
@@ -144,8 +144,8 @@ static long long quick_partition_count(const vector<long long>& a){
         int n = r - l;
         long long pivot = a[l + n/2];
 
-        vector<long long> less; less.reserve(n);
-        vector<long long> equal; equal.reserve(n);
+        vector<long long> less;    less.reserve(n);
+        vector<long long> equal;   equal.reserve(n);
         vector<long long> greater; greater.reserve(n);
         long long seen_greater = 0;
         long long cross = 0;
@@ -156,7 +156,7 @@ static long long quick_partition_count(const vector<long long>& a){
         }
 
         long long inv = cross;
-        if (!less.empty())   inv += quick_partition_count(less);
+        if (!less.empty())    inv += quick_partition_count(less);
         if (!greater.empty()) inv += quick_partition_count(greater);
         return inv;
     };
@@ -183,71 +183,70 @@ static InvTriple three_way_inv(vector<long long> arr){
     return {m,b,q};
 }
 
-
 /**
  * @brief CLI entry: build consensus ranking, count inversions per source, write reports.
  *
  * Usage:
- *   rank_reliability --out OUT_DIR source1.txt [source2.txt ...]
+ *   rank_reliability [--quiet] --out OUT_DIR source1.txt [source2.txt ...]
  *
  * Inputs:
- *   - Exactly 1+ source files; each file is a newline-separated list of item IDs (strings/ints),
+ *   - 1+ source files; each is a newline-separated list of item IDs (strings/ints),
  *     ordered from best (top) to worst (bottom).
- *
- * Processing pipeline:
- *   1) Read all sources; collect the universe of unique item IDs.
- *   2) Build per-source rank maps (1-based; "missing" items get rank = max_len + 1).
- *   3) Compute a **combined ranking** by SUM of ranks (lower sum = better; avg used as tiebreaker).
- *   4) For each source, create an array `a` of **combined positions** in that source’s order.
- *      If a source omits items, append the missing ones in combined-order at the end.
- *   5) Count inversions of `a` three ways:
- *        - merge_count (O(n log n), authoritative)
- *        - bit_count_inversions (O(n log n), authoritative)
- *        - quick_partition_count (diagnostic)
- *   6) Compute reliability = 1 − inv / (N*(N−1)/2) ∈ [0,1].
  *
  * Outputs (written to OUT_DIR):
  *   - combined_order.csv          : (position, item, sum_rank, avg_rank)
  *   - inversions_summary.csv      : (source, n, inv_merge, inv_bit, inv_quick, max_inv, reliability)
- *   - <source_name>_positions.csv : (index_in_source, combined_position) for each input source
- *   - report.md                   : brief methodology + results table
- *
- * Notes:
- *   - Merge and BIT counts should match exactly; quick may differ (diagnostic only).
- *   - Items are treated as strings; identical lines are identical items.
- *   - CSVs use commas, no quoting (safe for numeric IDs).
- *
- * Exit codes:
- *   1: bad usage (missing args)    2: missing --out or files    3: failed to open a source file
+ *   - <source_name>_positions.csv : (index_in_source, combined_position)
+ *   - report.md                   : methodology + results table (merge-based)
  */
 int main(int argc, char** argv){
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
-    if (argc < 3){
-        cerr << "Usage: " << argv[0] << " --out OUT_DIR source1.txt [source2.txt ...]\n";
+    // ---- Args (single pass) -------------------------------------------------
+    bool quiet = false;
+    string out_dir;
+    vector<string> files;
+
+    for (int i = 1; i < argc; ++i) {
+        string arg = argv[i];
+        if (arg == "--help") {
+            cout << "Usage: " << argv[0]
+                 << " [--quiet] --out OUT_DIR source1.txt [source2.txt ...]\n";
+            return 0;
+        }
+        if (arg == "--quiet") {
+            quiet = true;
+            continue;
+        }
+        if (arg == "--out") {
+            if (i + 1 >= argc) {
+                cerr << "Error: --out requires a directory\n";
+                return 1;
+            }
+            out_dir = argv[++i];
+            continue;
+        }
+        if (!arg.empty() && arg[0] == '-') {
+            cerr << "Unknown flag: " << arg << "\n";
+            cerr << "Usage: " << argv[0]
+                 << " [--quiet] --out OUT_DIR source1.txt [source2.txt ...]\n";
+            return 1;
+        }
+        files.push_back(arg);
+    }
+
+    if (out_dir.empty() || files.empty()){
+        cerr << "Usage: " << argv[0]
+             << " [--quiet] --out OUT_DIR source1.txt [source2.txt ...]\n";
         return 1;
     }
 
-    string out_dir;
-    vector<string> files;
-    for (int i=1;i<argc;++i){
-        string arg = argv[i];
-        if (arg == "--out" && i+1 < argc){
-            out_dir = argv[++i];
-        } else {
-            files.push_back(arg);
-        }
-    }
-    if (out_dir.empty() || files.empty()){
-        cerr << "Error: must pass --out and at least one source file.\n";
-        return 2;
-    }
-
-
+    // ---- Read sources; build universe ---------------------------------------
     vector<vector<string>> src_items;
     vector<string> src_names;
     unordered_set<string> universe;
+
     for (auto& f : files){
         ifstream in(f);
         if (!in){
@@ -257,8 +256,8 @@ int main(int argc, char** argv){
         vector<string> list;
         string line;
         while (std::getline(in, line)){
-            if (!line.empty() && line.back()=='\r') line.pop_back();
-            if (line.size()==0) continue;
+            if (!line.empty() && line.back()=='\r') line.pop_back(); // CRLF guard
+            if (line.empty()) continue;
             list.push_back(line);
             universe.insert(line);
         }
@@ -268,29 +267,26 @@ int main(int argc, char** argv){
         src_names.push_back(pos==string::npos ? f : f.substr(pos+1));
     }
 
-
+    // ---- Rank maps; missing rank = max_len + 1 ------------------------------
     int S = (int)src_items.size();
-    unordered_map<string, vector<int>> ranks; // item -> rank per source (1-based, or large if missing)
+    unordered_map<string, vector<int>> ranks; // item -> per-source ranks
     int max_len = 0;
-    for (int s=0;s<S;++s){
-        max_len = max<int>(max_len, src_items[s].size());
-    }
+    for (int s=0; s<S; ++s) max_len = max<int>(max_len, (int)src_items[s].size());
     int missing_rank = max_len + 1;
 
     for (auto& item : universe) ranks[item] = vector<int>(S, missing_rank);
-    for (int s=0;s<S;++s){
-        for (int i=0;i<(int)src_items[s].size();++i){
+    for (int s=0; s<S; ++s){
+        for (int i=0; i<(int)src_items[s].size(); ++i){
             ranks[src_items[s][i]][s] = i+1;
         }
     }
 
-
+    // ---- Combined order by sum of ranks (avg tiebreak) ----------------------
     struct Agg { string item; long long sum; double avg; };
-    vector<Agg> agg;
-    agg.reserve(universe.size());
+    vector<Agg> agg; agg.reserve(universe.size());
     for (auto& kv : ranks){
         long long sum = 0;
-        for (int s=0;s<S;++s) sum += kv.second[s];
+        for (int s=0; s<S; ++s) sum += kv.second[s];
         double avg = double(sum)/double(S);
         agg.push_back({kv.first, sum, avg});
     }
@@ -300,103 +296,89 @@ int main(int argc, char** argv){
         return a.item < b.item;
     });
 
-
+    // Map item -> combined position
     unordered_map<string,int> pos_combined;
-    pos_combined.reserve(agg.size()*1.3);
-    for (int i=0;i<(int)agg.size();++i){
-        pos_combined[agg[i].item] = i+1;
-    }
+    pos_combined.reserve(agg.size()*2);
+    for (int i=0; i<(int)agg.size(); ++i) pos_combined[agg[i].item] = i+1;
 
-    // Prepare output dir
+    // ---- Prepare output dir --------------------------------------------------
     std::error_code ec;
     std::filesystem::create_directories(out_dir, ec);
 
-    // Write combined order CSV
+    // combined_order.csv
     {
         ofstream out(out_dir + "/combined_order.csv");
         out << "position,item,sum_rank,avg_rank\n";
-        for (int i=0;i<(int)agg.size();++i){
-            out << (i+1) << "," << agg[i].item << "," << agg[i].sum << "," << fixed << setprecision(4) << agg[i].avg << "\n";
+        out << std::fixed << setprecision(4);
+        for (int i=0; i<(int)agg.size(); ++i){
+            out << (i+1) << "," << agg[i].item << "," << agg[i].sum << "," << agg[i].avg << "\n";
         }
     }
 
-    // For each source: build position array according to combined order to count inversions
-    struct Row { string src; long long n; long long inv_merge; long long inv_bit; long long inv_quick; long long max_inv; double reliability; };
+    // ---- Per-source inversions & reliability --------------------------------
+    struct Row {
+        string src; long long n;
+        long long inv_merge, inv_bit, inv_quick, max_inv;
+        double reliability;
+    };
     vector<Row> summary;
 
     long long N = (long long)agg.size();
     long long max_inv = N*(N-1)/2;
 
-    for (int s=0;s<S;++s){
-        // Create array 'a' = combined position sequence in the order of source s,
-        // excluding items not present in combined (shouldn't happen).
-        vector<long long> a;
-        a.reserve(N);
+    for (int s=0; s<S; ++s){
+        // Build combined-position array in the order of source s
+        vector<long long> a; a.reserve(N);
         for (auto& it : src_items[s]){
             auto itp = pos_combined.find(it);
             if (itp != pos_combined.end()) a.push_back(itp->second);
         }
-        // If some items are missing in this source (present elsewhere), append them at the end
+        // Append items missing from this source at the end in combined order
         if ((long long)a.size() < N){
-            // add missing items in combined order after the listed ones
             unordered_set<string> present(src_items[s].begin(), src_items[s].end());
-            for (auto& ag : agg){
-                if (!present.count(ag.item)){
-                    a.push_back(pos_combined[ag.item]);
-                }
-            }
+            for (auto& ag : agg) if (!present.count(ag.item)) a.push_back(pos_combined[ag.item]);
         }
 
-        auto tr = three_way_inv(a);
+        // Run counters
+        InvTriple tr = three_way_inv(a);
 
-        // Quick is only diagnostic: log as info, not a warning.
-        if (tr.quick_inv != tr.merge_inv) {
+        // Ground truth: merge vs BIT must match
+        if (tr.merge_inv != tr.bit_inv){
+            cerr << "[ERROR] merge vs BIT disagree for " << src_names[s]
+                 << " | merge=" << tr.merge_inv
+                 << " bit=" << tr.bit_inv << "\n";
+        }
+
+        // Quick is diagnostic only
+        if (!quiet && tr.quick_inv != tr.merge_inv) {
             cerr << "[INFO] quick differs by "
-                << (tr.merge_inv - tr.quick_inv)
-                << " for " << src_names[s] << "\n";
+                 << (tr.merge_inv - tr.quick_inv)
+                 << " for " << src_names[s] << "\n";
         }
 
         double rel = 1.0 - (double)tr.merge_inv / (double)max_inv;
-        summary.push_back({src_names[s], (long long)a.size(), tr.merge_inv, tr.bit_inv, tr.quick_inv, max_inv, rel});
+        summary.push_back({src_names[s], (long long)a.size(),
+                           tr.merge_inv, tr.bit_inv, tr.quick_inv, max_inv, rel});
 
-        // Write the per-source positions
+        // Per-source mapping
         ofstream out(out_dir + "/" + src_names[s] + "_positions.csv");
         out << "index_in_source,combined_position\n";
-        for (size_t i=0;i<a.size();++i){
-            out << (i+1) << "," << a[i] << "\n";
-        }
+        for (size_t i=0; i<a.size(); ++i) out << (i+1) << "," << a[i] << "\n";
     }
 
-    // Write summary CSV
+    // ---- Summary CSV ---------------------------------------------------------
     {
         ofstream out(out_dir + "/inversions_summary.csv");
         out << "source,n,inv_merge,inv_bit,inv_quick,max_inv,reliability\n";
         out << std::fixed << setprecision(6);
         for (auto& r : summary){
-            out << r.src << "," << r.n << "," << r.inv_merge << "," << r.inv_bit << "," << r.inv_quick << "," << r.max_inv << "," << r.reliability << "\n";
+            out << r.src << "," << r.n << "," << r.inv_merge << ","
+                << r.inv_bit << "," << r.inv_quick << ","
+                << r.max_inv << "," << r.reliability << "\n";
         }
     }
 
-    // Markdown report
-    // {
-    //     ofstream out(out_dir + "/report.md");
-    //     out << "# Ranking Reliability Report\n\n";
-    //     out << "- Sources: " << S << "\n";
-    //     out << "- Total unique items: " << N << "\n";
-    //     out << "- Max inversions for N items: " << max_inv << "\n\n";
-    //     out << "## Methodology\n";
-    //     out << "We computed a **combined ranking** by summing per-source ranks (lower sum = better). For each source, we mapped its order to the combined order and counted inversions using three independent methods: (1) modified merge sort, (2) Binary Indexed Tree (Fenwick), and (3) a quicksort-style partition recursion that exactly counts cross-inversions.\n\n";
-    //     out << "A **reliability score** is defined as `1 - (inversions / max_inversions)` ∈ [0,1]. Higher means closer to the consensus.\n\n";
-    //     out << "## Results\n";
-    //     out << "| Source | n | Inversions | Reliability |\n";
-    //     out << "|---|---:|---:|---:|\n";
-    //     out << std::fixed << setprecision(6);
-    //     for (auto& r : summary){
-    //         out << "| " << r.src << " | " << r.n << " | " << r.inv_merge << " | " << r.reliability << " |\n";
-    //     }
-    //     out << "\n";
-    //     out << "See `combined_order.csv`, `inversions_summary.csv`, and `<source>_positions.csv` for details.\n";
-    // }
+    // ---- Markdown report (merge-based table; quick diagnostic only) ---------
     {
         ofstream out(out_dir + "/report.md");
         out << "# Ranking Reliability Report\n\n";
@@ -405,9 +387,9 @@ int main(int argc, char** argv){
         out << "- Max inversions for N items: " << max_inv << "\n\n";
         out << "## Methodology\n";
         out << "We computed a **combined ranking** by summing per-source ranks (lower sum = better). "
-            "For each source, we mapped its order to the combined order and counted inversions using "
-            "two authoritative methods (Merge sort and Fenwick/BIT). A quicksort-style method is included "
-            "for **diagnostic** insight only.\n\n";
+               "For each source, we mapped its order to the combined order and counted inversions using "
+               "two authoritative methods (Merge sort and Fenwick/BIT). A quicksort-style method is included "
+               "for **diagnostic** insight only.\n\n";
         out << "A **reliability score** is defined as `1 - (inversions / max_inversions)` ∈ [0,1]. Higher means closer to the consensus.\n\n";
         out << "## Results (Merge-based)\n";
         out << "| Source | n | Inversions (merge) | Reliability |\n";
