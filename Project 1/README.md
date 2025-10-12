@@ -77,8 +77,7 @@ All results are written under the output directory (`--out OUT_DIR`):
 ## Development Tools
 - Language: C++17  
 - Build: make (uses g++/clang++)  
-- Dependencies: STL only (no external libs).  
-- Optional: Doxygen docs (make docs if you add a Doxyfile).  
+- Dependencies: STL only (no external libs).    
 
 ---
 
