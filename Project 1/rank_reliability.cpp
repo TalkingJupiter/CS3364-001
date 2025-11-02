@@ -5,7 +5,7 @@
  *   Batuhan Sencer & Larry To
  * @date 2025-09-26
  *
- * What this does (plain English):
+ * What we need to do:
  * - We take several ranked lists (think: five different “top-N” lists).
  * - We fuse them into one consensus order by summing ranks (Borda-style).
  * - For each original list, we measure how “out of order” it is vs. the consensus
@@ -16,7 +16,7 @@
  * - CSVs with the consensus order and per-source reliability,
  * - A short Markdown report that’s easy to drop into a lab notebook or GitHub README.
  *
- * Super short recap: fuse by sum-of-ranks → count inversions per source → reliability = 1 − inv/max_inv.
+ * Super short recap: fuse by sum-of-ranks -> count inversions per source -> reliability = 1 − inv/max_inv.
  */
 
 #include <algorithm>
@@ -47,7 +47,7 @@ using ll = long long;
  * whenever a right-half element jumps ahead of the remaining left-half elements,
  * it creates (m - i) inversions at once.
  *
- * Notes for teammates:
+ * Important:
  * - We reuse a single temp buffer and write the sorted range back into @p a.
  * - Equal values are kept stable (no inversions added when a[i] == a[j]).
  *
@@ -105,7 +105,7 @@ struct BIT {
  *
  * Complexity: O(n log n) time, O(n) memory.
  *
- * SSR: compress → sweep right-to-left → use BIT prefix sums to add “smaller-seen” counts.
+ * SSR: compress -> sweep right-to-left -> use BIT prefix sums to add “smaller-seen” counts.
  */
 static long long bit_count_inversions(vector<long long> a){
     // coordinate compress
@@ -129,7 +129,7 @@ static long long bit_count_inversions(vector<long long> a){
 /**
  * @brief Quicksort-style “count while partitioning” (diagnostic).
  *
- * What we’re doing:
+ * What are we doing:
  * - Pick a pivot; scan once. Every time we see a smaller-than-pivot after a greater-than-pivot,
  *   that’s a cross-inversion. We count those, then recurse on <pivot and >pivot buckets.
  *
@@ -137,7 +137,7 @@ static long long bit_count_inversions(vector<long long> a){
  * - Great for intuition and sanity checks, but merge/BIT are our ground truth.
  * - Duplicates are treated as equal (no inversions among ties).
  *
- * SSR: pivot → count “greater-before-smaller” during partition → recurse.
+ * SSR: pivot -> count “greater-before-smaller” during partition -> recurse.
  */
 static long long quick_partition_count(const vector<long long>& a){
     function<long long(int,int)> rec = [&](int l, int r)->long long{
@@ -171,7 +171,7 @@ static long long quick_partition_count(const vector<long long>& a){
  * - merge_count and BIT should match exactly (both O(n log n)).
  * - quick_partition_count is included as a learning/diagnostic baseline.
  *
- * SSR: copy → run merge, BIT, quick → compare.
+ * SSR: copy -> run merge, BIT, quick -> compare.
  */
 struct InvTriple { long long merge_inv, bit_inv, quick_inv; };
 static InvTriple three_way_inv(vector<long long> arr){

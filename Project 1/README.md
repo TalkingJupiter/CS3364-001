@@ -1,4 +1,3 @@
-"""
 # Ranking Reliability — Project 1
 
 **Consensus ranking + inversion-based reliability** using three inversion-counting methods.  
@@ -39,7 +38,7 @@ All results are written under the output directory (`--out OUT_DIR`):
 
 ---
 
-## ⚙️ Usage
+##  Usage
 
 ### Build
     make
@@ -78,8 +77,7 @@ All results are written under the output directory (`--out OUT_DIR`):
 ## Development Tools
 - Language: C++17  
 - Build: make (uses g++/clang++)  
-- Dependencies: STL only (no external libs).  
-- Optional: Doxygen docs (make docs if you add a Doxyfile).  
+- Dependencies: STL only (no external libs).    
 
 ---
 
